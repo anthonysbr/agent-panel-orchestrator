@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.singlefile.1.9.0.schema.json
+
+PackageIdentifier: Entkreis.AgentPanelOrchestrator
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: Anthony Batista
+PublisherUrl: https://entkreis.de
+PublisherSupportUrl: https://github.com/anthonysbr/agent-panel-orchestrator/issues
+PackageName: Agent Panel Orchestrator
+PackageUrl: https://github.com/anthonysbr/agent-panel-orchestrator
+License: MIT
+LicenseUrl: https://github.com/anthonysbr/agent-panel-orchestrator/blob/main/LICENSE
+ShortDescription: Run independent agent panels through local AI agent CLIs
+Description: |-
+  Agent Panel Orchestrator runs blind panelists on Codex, Claude Code, Cursor, and Gemini,
+  stores run artifacts, and synthesizes a final answer through a judge pass.
+Moniker: panel
+Tags:
+  - agents
+  - ai
+  - cli
+  - codex
+  - claude
+  - cursor
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    NestedInstallerType: portable
+    InstallerUrl: https://github.com/anthonysbr/agent-panel-orchestrator/releases/download/v0.1.0/agent-panel-orchestrator-windows-0.1.0.zip
+    InstallerSha256: PLACEHOLDER_UPDATE_ON_RELEASE
+    ArchiveBinariesDependOnPath: true
+    Commands:
+      - panel
+ManifestType: singleton
+ManifestVersion: 1.9.0

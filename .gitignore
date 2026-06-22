@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+runs/
+.panel/skill_proposals/
+.DS_Store
+panel_core/_bundle/
+npm/python/
+dist/
+build/
+*.egg-info/

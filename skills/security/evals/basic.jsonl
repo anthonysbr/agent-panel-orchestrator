@@ -1,0 +1,2 @@
+{"id":"security-agent-tools","task":"Review an AI agent workflow that can run shell commands and access secrets.","must_include":["Trust boundaries","Secrets","least privilege","approval"]}
+{"id":"security-web-app","task":"Review a web app endpoint for injection and authorization risk.","must_include":["authorization","Injection","exploit path","mitigation"]}

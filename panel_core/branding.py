@@ -1,0 +1,5 @@
+BRAND_NAME = "Agent Panel Orchestrator"
+CREATOR_NAME = "Anthony Batista"
+CREATOR_SITE = "entkreis.de"
+CREATOR_URL = "https://entkreis.de"
+CREATOR_LABEL = f"{CREATOR_NAME} ({CREATOR_SITE})"

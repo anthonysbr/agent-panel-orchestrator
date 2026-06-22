@@ -1,0 +1,2 @@
+{"id":"design-ui-review","task":"Review a dashboard UI for accessibility and responsive issues.","must_include":["accessibility","responsive","contrast","layout"]}
+{"id":"design-component-build","task":"Build a form component with loading, error, and focus states.","must_include":["loading states","error states","focus states","labels"]}

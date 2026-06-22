@@ -1,0 +1,153 @@
+# Agent Panel Orchestrator
+
+Python CLI for running independent panelists on local agent CLIs, then synthesizing their answers through a judge pass.
+
+Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini on their own identity and tools. Skill references live under `third_party/`.
+
+## Commands
+
+```bash
+./panel detect
+./panel prompt --agent codex --task "test"
+./panel prompt --agent codex --skills design --task "review this UI"
+./panel run --dry-run --skills auto --panel codex:2 --judge codex -- "test"
+./panel run --skills auto --panel auto --judge auto -- "your hard question"
+./panel skills list
+./panel skills show design
+./panel skills improve design --from-runs runs --dry-run
+./panel export-rules --target /path/to/project
+```
+
+## Install
+
+| Method | Command | Best for |
+|--------|---------|----------|
+| npm | `npm install -g agent-panel-orchestrator` | Web/mobile projects, monorepos, teams on Node.js |
+| pipx | `pipx install agent-panel-orchestrator` | Python-first workflows on macOS, Linux, or Windows |
+| Homebrew | `brew tap entkreis/agent-panel` then `brew install agent-panel-orchestrator` | macOS and Linux terminal setups |
+| Windows zip | Download from [GitHub Releases](https://github.com/anthonysbr/agent-panel-orchestrator/releases) or run `packaging/windows/install.ps1` | Windows without a preferred package manager |
+| Git clone | `./install.sh` | Contributors and active development of this repo |
+
+Requirements: Python 3.10+ and at least one provider CLI (`codex`, `claude`, `agent`, or `gemini`).
+
+### Git clone (development)
+
+```bash
+./install.sh --dry-run
+./install.sh
+```
+
+By default this symlinks `~/.local/bin/panel` to this repo's `panel` script.
+
+### npm (JS ecosystem)
+
+```bash
+npm install -g agent-panel-orchestrator
+panel detect
+```
+
+Project-local install:
+
+```bash
+npm install -D agent-panel-orchestrator
+npx panel run --skills auto --panel auto --judge auto -- "your task"
+```
+
+### pipx / pip
+
+```bash
+pipx install agent-panel-orchestrator
+panel detect
+```
+
+### Homebrew
+
+```bash
+brew tap entkreis/agent-panel https://github.com/anthonybatista/homebrew-agent-panel
+brew install agent-panel-orchestrator
+```
+
+See [`packaging/homebrew/README.md`](packaging/homebrew/README.md).
+
+### Windows
+
+```powershell
+npm install -g agent-panel-orchestrator
+# or
+pipx install agent-panel-orchestrator
+# or
+irm https://raw.githubusercontent.com/anthonysbr/agent-panel-orchestrator/main/packaging/windows/install.ps1 | iex
+```
+
+Winget manifest: [`packaging/winget/`](packaging/winget/).
+
+## Providers
+
+Provider subprocess adapters live in `config/agents.json`.
+
+- `codex`: runs `codex exec` in a scratch directory and captures the final answer with `-o`.
+- `claude`: runs `claude -p --output-format text --no-session-persistence`.
+- `cursor`: runs `agent -p --output-format text`.
+
+`./panel detect` checks Codex, Claude Code, Cursor, and Gemini as first-class providers.
+
+## Skills
+
+Built-in skills live in `skills/`:
+
+- `design`
+- `code-review`
+- `security`
+- `research`
+
+Use `--skills auto` to select skills from the task text, `--skills none` to disable them, or pass an explicit list:
+
+```bash
+./panel run --skills design,security --panel auto --judge auto -- "review this app"
+```
+
+Project-specific skills go in `.panel/skills/` and override built-in skills with the same id.
+
+```bash
+./panel skills create brand --target /path/to/project
+```
+
+Improvements are staged under `.panel/skill_proposals/` and only land after validation:
+```bash
+./panel skills eval design
+./panel skills improve design --from-runs runs --dry-run
+./panel skills adopt design/20260615T120000Z
+./panel skills reject design/20260615T120000Z
+```
+
+## Run Artifacts
+
+Each run writes to `runs/<timestamp>/` in the current working directory:
+
+- `run_plan.json`
+- `task_graph.json`
+- `task.md`
+- `panelists/*.prompt.md`
+- `panelists/*.output.md` for live runs
+- `logs/*.log`
+- `judge.prompt.md`
+- `final.md`
+- `verification.md`
+- `decision.md`
+- `learning.md`
+
+`runs/` is gitignored local output.
+
+## Tests
+
+```bash
+python3 -m compileall panel_core tests
+python3 -m unittest discover tests
+```
+
+## Contributing
+
+PRs welcome. For bugs, open an issue with the command you ran and what went wrong.
+
+Email: [hallo@entkreis.de](mailto:hallo@entkreis.de) (Anthony Batista).
+

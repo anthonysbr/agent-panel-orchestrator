@@ -1,0 +1,24 @@
+{
+  "id": "security",
+  "name": "Security",
+  "version": "1.0.0",
+  "description": "Security review for authentication, authorization, secrets, injection, dependency risk, CI/CD, agent tool use, and unsafe automation.",
+  "triggers": [
+    "security",
+    "secure",
+    "auth",
+    "authorization",
+    "authentication",
+    "secret",
+    "token",
+    "injection",
+    "xss",
+    "csrf",
+    "supply chain",
+    "dependency",
+    "ci",
+    "cicd",
+    "permissions",
+    "sandbox"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "code-review",
+  "name": "Code Review",
+  "version": "1.0.0",
+  "description": "Systematic code review for pull requests, diffs, architecture changes, correctness, maintainability, tests, performance, and security-adjacent risks.",
+  "triggers": [
+    "code review",
+    "review",
+    "pull request",
+    "pr",
+    "diff",
+    "merge",
+    "bug",
+    "refactor",
+    "tests",
+    "maintainability",
+    "architecture",
+    "regression"
+  ]
+}

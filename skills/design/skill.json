@@ -1,0 +1,22 @@
+{
+  "id": "design",
+  "name": "Design",
+  "version": "1.0.0",
+  "description": "UI and UX review for product screens, components, dashboards, landing pages, visual systems, accessibility, interaction quality, and responsive behavior.",
+  "triggers": [
+    "ui",
+    "ux",
+    "design",
+    "interface",
+    "screen",
+    "dashboard",
+    "landing",
+    "component",
+    "responsive",
+    "accessibility",
+    "layout",
+    "typography",
+    "visual",
+    "prototype"
+  ]
+}

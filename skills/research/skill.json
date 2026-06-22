@@ -1,0 +1,22 @@
+{
+  "id": "research",
+  "name": "Research",
+  "version": "1.0.0",
+  "description": "Research synthesis for source-backed answers, literature checks, market scans, technical comparisons, citation quality, uncertainty, and claim verification.",
+  "triggers": [
+    "research",
+    "sources",
+    "citation",
+    "cite",
+    "paper",
+    "academic",
+    "literature",
+    "study",
+    "compare",
+    "market",
+    "evidence",
+    "verify",
+    "latest",
+    "current"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "agent-panel-orchestrator",
+  "version": "0.1.0",
+  "description": "Run independent agent panels through Codex, Claude Code, Cursor, and Gemini CLIs.",
+  "license": "MIT",
+  "author": "Anthony Batista",
+  "homepage": "https://github.com/anthonysbr/agent-panel-orchestrator#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anthonysbr/agent-panel-orchestrator.git"
+  },
+  "keywords": [
+    "agents",
+    "cli",
+    "orchestrator",
+    "codex",
+    "claude",
+    "cursor",
+    "ai"
+  ],
+  "bin": {
+    "panel": "bin/panel.cjs"
+  },
+  "files": [
+    "bin",
+    "python",
+    "scripts"
+  ],
+  "scripts": {
+    "prepack": "node scripts/prepack.js",
+    "test:smoke": "node scripts/prepack.js && node bin/panel.cjs skills list"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

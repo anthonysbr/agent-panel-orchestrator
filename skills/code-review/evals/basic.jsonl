@@ -1,0 +1,2 @@
+{"id":"review-pr-risk","task":"Review a pull request for bugs and missing tests.","must_include":["Correctness","Tests","Severity","Blocking"]}
+{"id":"review-refactor","task":"Review a refactor for maintainability and regressions.","must_include":["Maintainability","regression","existing helpers","findings first"]}

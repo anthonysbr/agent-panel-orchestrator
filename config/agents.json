@@ -1,0 +1,62 @@
+{
+  "providers": {
+    "codex": {
+      "display_name": "Codex CLI",
+      "binary": "codex",
+      "version_args": ["--version"],
+      "mode": "stdin_to_output_file",
+      "command": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--cd",
+        "{scratch_dir}",
+        "-s",
+        "workspace-write",
+        "-c",
+        "tools.web_search=true",
+        "-o",
+        "{output_file}",
+        "-"
+      ]
+    },
+    "claude": {
+      "display_name": "Claude Code",
+      "binary": "claude",
+      "version_args": ["--version"],
+      "mode": "stdin_stdout",
+      "command": [
+        "claude",
+        "-p",
+        "--output-format",
+        "text",
+        "--no-session-persistence"
+      ]
+    },
+    "cursor": {
+      "display_name": "Cursor Agent CLI",
+      "binary": "agent",
+      "version_args": ["--version"],
+      "mode": "arg_stdout",
+      "command": [
+        "agent",
+        "-p",
+        "--output-format",
+        "text",
+        "{prompt}"
+      ]
+    },
+    "gemini": {
+      "display_name": "Gemini CLI",
+      "binary": "gemini",
+      "version_args": ["--version"],
+      "mode": "arg_stdout",
+      "command": [
+        "gemini",
+        "-p",
+        "{prompt}"
+      ]
+    }
+  },
+  "external_tools": {}
+}

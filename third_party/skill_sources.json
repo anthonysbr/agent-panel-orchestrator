@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "id": "ui-ux-pro-max-skill",
+      "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "author": "Next Level Builder",
+      "license": "MIT",
+      "usage": "Reference for design skill direction."
+    },
+    {
+      "id": "code-review-skill",
+      "repository": "https://github.com/awesome-skills/code-review-skill",
+      "author": "awesome-skills / tt-a1i",
+      "license": "MIT",
+      "usage": "Reference for code review skill direction."
+    }
+  ]
+}

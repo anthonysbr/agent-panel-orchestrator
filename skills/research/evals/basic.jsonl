@@ -1,0 +1,2 @@
+{"id":"research-source-quality","task":"Research a technical comparison using current primary sources.","must_include":["primary sources","uncertainty","source quality","Direct answer"]}
+{"id":"research-claim-check","task":"Verify whether a cited paper supports a specific claim.","must_include":["claims","actually says","missing evidence","overclaiming"]}
