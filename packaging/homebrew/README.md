@@ -1,7 +1,7 @@
 # Homebrew tap
 
 ```bash
-brew tap entkreis/agent-panel https://github.com/anthonybatista/homebrew-agent-panel
+brew tap entkreis/agent-panel https://github.com/anthonysbr/homebrew-agent-panel
 brew install agent-panel-orchestrator
 ```
 

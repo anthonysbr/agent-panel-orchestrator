@@ -65,6 +65,14 @@ class PromptTests(unittest.TestCase):
         self.assertIn("failed hard", prompt)
         self.assertIn("Treat failed, missing, timeout, or empty panelists as absent", prompt)
 
+    def test_judge_prompt_truncates_long_output(self) -> None:
+        from panel_core.prompts import truncate_for_judge
+
+        long_text = "paragraph\n\n" + ("x" * 20000)
+        truncated = truncate_for_judge(long_text, max_chars=1000)
+        self.assertIn("[truncated]", truncated)
+        self.assertLess(len(truncated), len(long_text))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ from .skills import SkillRegistry, render_skill_context
 
 
 DEFAULT_PROVIDER_ORDER = ["claude", "codex", "cursor", "gemini"]
+RETRYABLE_STATUSES = {"failed", "timeout", "empty"}
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,14 @@ class RunPlan:
 
 
 @dataclass(frozen=True)
+class RunPreview:
+    panel_slug: str
+    judge: str
+    panelists: List[PanelistPlan]
+    skills: List[str]
+
+
+@dataclass(frozen=True)
 class RunOutcome:
     plan: RunPlan
     panel_results: List[ProviderRunResult]
@@ -40,16 +49,22 @@ class RunOutcome:
     final_output_path: Optional[Path]
 
 
-def parse_panel_spec(panel: str, registry: ProviderRegistry) -> List[str]:
+def parse_panel_spec(
+    panel: str,
+    registry: ProviderRegistry,
+    max_panelists: Optional[int] = None,
+) -> List[str]:
     if panel == "auto":
         available = registry.available_provider_names()
         ordered = [name for name in DEFAULT_PROVIDER_ORDER if name in available]
         ordered.extend(name for name in available if name not in ordered)
+        if not ordered:
+            raise ValueError("no runnable providers detected; install Codex, Claude Code, or Cursor CLI")
+        if max_panelists is not None and max_panelists > 0:
+            ordered = ordered[:max_panelists]
         if len(ordered) >= 2:
             return ordered
-        if len(ordered) == 1:
-            return [ordered[0], ordered[0]]
-        raise ValueError("no runnable providers detected; install Codex, Claude Code, or Cursor CLI")
+        return [ordered[0], ordered[0]]
 
     providers: List[str] = []
     for item in panel.split(","):
@@ -71,6 +86,9 @@ def parse_panel_spec(panel: str, registry: ProviderRegistry) -> List[str]:
 
     if not providers:
         raise ValueError("panel spec did not name any providers")
+
+    if max_panelists is not None and max_panelists > 0 and len(providers) > max_panelists:
+        providers = providers[:max_panelists]
 
     known = set(registry.config.providers)
     unknown = sorted(set(providers) - known)
@@ -106,6 +124,28 @@ def panel_slug_from_plan(panelists: Iterable[PanelistPlan]) -> str:
     return ",".join(panelist.provider for panelist in panelists)
 
 
+def preview_run(
+    registry: ProviderRegistry,
+    task: str,
+    panel: str,
+    judge: str,
+    skills_spec: str,
+    project_root: Optional[Path] = None,
+    max_panelists: Optional[int] = None,
+) -> RunPreview:
+    providers = parse_panel_spec(panel, registry, max_panelists=max_panelists)
+    chosen_judge = choose_judge(judge, registry)
+    panelists = build_panelist_plan(providers)
+    root = (project_root or Path.cwd()).resolve()
+    selected_skills = SkillRegistry(root).resolve(skills_spec, task)
+    return RunPreview(
+        panel_slug=panel_slug_from_plan(panelists),
+        judge=chosen_judge,
+        panelists=panelists,
+        skills=[skill.skill_id for skill in selected_skills],
+    )
+
+
 class AgentPanelOrchestrator:
     def __init__(
         self,
@@ -119,6 +159,24 @@ class AgentPanelOrchestrator:
         self.runs_dir = runs_dir or Path.cwd() / "runs"
         self.project_root = (project_root or Path.cwd()).resolve()
 
+    def preview(
+        self,
+        task: str,
+        panel: str,
+        judge: str,
+        skills_spec: str = "auto",
+        max_panelists: Optional[int] = None,
+    ) -> RunPreview:
+        return preview_run(
+            self.registry,
+            task,
+            panel,
+            judge,
+            skills_spec,
+            project_root=self.project_root,
+            max_panelists=max_panelists,
+        )
+
     def run(
         self,
         task: str,
@@ -127,29 +185,29 @@ class AgentPanelOrchestrator:
         dry_run: bool,
         timeout_seconds: int,
         skills_spec: str = "auto",
+        max_panelists: Optional[int] = None,
+        retries: int = 0,
     ) -> RunOutcome:
-        providers = parse_panel_spec(panel, self.registry)
-        chosen_judge = choose_judge(judge, self.registry)
-        panelists = build_panelist_plan(providers)
-        selected_skills = SkillRegistry(self.project_root).resolve(skills_spec, task)
-        skill_context = render_skill_context(selected_skills)
+        preview = self.preview(task, panel, judge, skills_spec, max_panelists=max_panelists)
         run_dir = self._create_run_dir()
-        panel_slug = panel_slug_from_plan(panelists)
         plan = RunPlan(
-            panel_slug=panel_slug,
-            judge=chosen_judge,
-            panelists=panelists,
-            skills=[skill.skill_id for skill in selected_skills],
+            panel_slug=preview.panel_slug,
+            judge=preview.judge,
+            panelists=preview.panelists,
+            skills=preview.skills,
             dry_run=dry_run,
             run_dir=str(run_dir),
         )
+
+        selected_skills = SkillRegistry(self.project_root).resolve(skills_spec, task)
+        skill_context = render_skill_context(selected_skills)
 
         self._write_run_plan(run_dir, plan, task)
         prompt_dir = run_dir / "panelists"
         prompt_dir.mkdir(parents=True, exist_ok=True)
 
         panel_prompts: Dict[str, str] = {}
-        for panelist in panelists:
+        for panelist in plan.panelists:
             prompt = render_panelist_prompt(panelist.provider, task, skill_context=skill_context)
             panel_prompts[panelist.panelist_id] = prompt
             (prompt_dir / f"{panelist.panelist_id}.prompt.md").write_text(prompt, encoding="utf-8")
@@ -159,16 +217,22 @@ class AgentPanelOrchestrator:
             return RunOutcome(plan=plan, panel_results=[], judge_result=None, final_output_path=None)
 
         try:
-            self._ensure_available([panelist.provider for panelist in panelists] + [chosen_judge])
+            self._ensure_available([panelist.provider for panelist in plan.panelists] + [plan.judge])
         except RuntimeError as exc:
             write_run_contract(run_dir, task, plan, run_error=str(exc))
             raise
 
-        panel_results = self._run_panelists(panelists, panel_prompts, prompt_dir, timeout_seconds)
+        panel_results = self._run_panelists(
+            plan.panelists,
+            panel_prompts,
+            prompt_dir,
+            timeout_seconds,
+            retries=max(0, min(retries, 2)),
+        )
         write_run_contract(run_dir, task, plan, panel_results=panel_results)
         successful = [
             PanelResponse(
-                panelist_id=panelists[index].panelist_id,
+                panelist_id=plan.panelists[index].panelist_id,
                 provider=result.provider,
                 status=result.status,
                 output=result.output,
@@ -181,12 +245,18 @@ class AgentPanelOrchestrator:
             write_run_contract(run_dir, task, plan, panel_results=panel_results, run_error=message)
             raise RuntimeError(message)
 
-        judge_prompt = render_judge_prompt(chosen_judge, task, panel_slug, successful, skill_context=skill_context)
+        judge_prompt = render_judge_prompt(
+            plan.judge,
+            task,
+            plan.panel_slug,
+            successful,
+            skill_context=skill_context,
+        )
         judge_prompt_path = run_dir / "judge.prompt.md"
         judge_prompt_path.write_text(judge_prompt, encoding="utf-8")
         final_path = run_dir / "final.md"
         judge_result = self.runner.run(
-            chosen_judge,
+            plan.judge,
             judge_prompt,
             final_path,
             run_dir / "logs" / "judge.log",
@@ -249,30 +319,58 @@ class AgentPanelOrchestrator:
         if missing:
             raise RuntimeError(f"missing provider CLI(s): {', '.join(missing)}")
 
+    def _run_panelist_once(
+        self,
+        panelist: PanelistPlan,
+        prompt: str,
+        panel_dir: Path,
+        logs_dir: Path,
+        timeout_seconds: int,
+    ) -> ProviderRunResult:
+        output_path = panel_dir / f"{panelist.panelist_id}.output.md"
+        log_path = logs_dir / f"{panelist.panelist_id}.log"
+        return self.runner.run(
+            panelist.provider,
+            prompt,
+            output_path,
+            log_path,
+            timeout_seconds,
+        )
+
     def _run_panelists(
         self,
         panelists: Sequence[PanelistPlan],
         prompts: Dict[str, str],
         panel_dir: Path,
         timeout_seconds: int,
+        retries: int = 0,
     ) -> List[ProviderRunResult]:
         results_by_id: Dict[str, ProviderRunResult] = {}
         logs_dir = panel_dir.parent / "logs"
-        with ThreadPoolExecutor(max_workers=len(panelists)) as executor:
-            futures = {}
-            for panelist in panelists:
-                output_path = panel_dir / f"{panelist.panelist_id}.output.md"
-                log_path = logs_dir / f"{panelist.panelist_id}.log"
-                future = executor.submit(
-                    self.runner.run,
-                    panelist.provider,
+        logs_dir.mkdir(parents=True, exist_ok=True)
+
+        def execute(panelist: PanelistPlan) -> ProviderRunResult:
+            result = self._run_panelist_once(
+                panelist,
+                prompts[panelist.panelist_id],
+                panel_dir,
+                logs_dir,
+                timeout_seconds,
+            )
+            attempts = 0
+            while result.status in RETRYABLE_STATUSES and attempts < retries:
+                attempts += 1
+                result = self._run_panelist_once(
+                    panelist,
                     prompts[panelist.panelist_id],
-                    output_path,
-                    log_path,
+                    panel_dir,
+                    logs_dir,
                     timeout_seconds,
                 )
-                futures[future] = panelist.panelist_id
+            return result
 
+        with ThreadPoolExecutor(max_workers=len(panelists)) as executor:
+            futures = {executor.submit(execute, panelist): panelist.panelist_id for panelist in panelists}
             for future in as_completed(futures):
                 panelist_id = futures[future]
                 results_by_id[panelist_id] = future.result()

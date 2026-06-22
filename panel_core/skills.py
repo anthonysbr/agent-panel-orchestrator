@@ -100,6 +100,8 @@ class SkillRegistry:
         scored = []
         for skill in self.list_skills():
             score = 0
+            if skill.skill_id.replace("-", " ") in haystack or skill.skill_id in haystack:
+                score += 3
             for trigger in skill.triggers:
                 needle = trigger.lower()
                 if needle and needle in haystack:
@@ -186,7 +188,8 @@ def render_skill_context(skills: Sequence[Skill]) -> str:
 
 
 def evaluate_skill(skill: Skill, instructions: Optional[str] = None) -> EvalResult:
-    text = (instructions if instructions is not None else skill.read_instructions()).lower()
+    text = instructions if instructions is not None else skill.read_instructions()
+    lowered = text.lower()
     cases = list(_iter_eval_cases(skill.path / "evals"))
     failures: List[str] = []
     passed = 0
@@ -196,9 +199,26 @@ def evaluate_skill(skill: Skill, instructions: Optional[str] = None) -> EvalResu
         if not isinstance(required, list) or not all(isinstance(item, str) for item in required):
             failures.append(f"{case_id}: invalid must_include")
             continue
-        missing = [item for item in required if item.lower() not in text]
+        forbidden = case.get("must_not_include", [])
+        if forbidden and (not isinstance(forbidden, list) or not all(isinstance(item, str) for item in forbidden)):
+            failures.append(f"{case_id}: invalid must_not_include")
+            continue
+        min_length = case.get("min_length")
+        if min_length is not None and (not isinstance(min_length, int) or min_length < 0):
+            failures.append(f"{case_id}: invalid min_length")
+            continue
+
+        missing = [item for item in required if item.lower() not in lowered]
         if missing:
             failures.append(f"{case_id}: missing {', '.join(missing)}")
+            continue
+        if forbidden:
+            present = [item for item in forbidden if item.lower() in lowered]
+            if present:
+                failures.append(f"{case_id}: forbidden {', '.join(present)}")
+                continue
+        if isinstance(min_length, int) and len(text.strip()) < min_length:
+            failures.append(f"{case_id}: shorter than min_length {min_length}")
             continue
         passed += 1
     score = (passed / len(cases)) if cases else 0.0
@@ -302,6 +322,25 @@ def reject_proposal(registry: SkillRegistry, proposal_id: str) -> Path:
     metadata["rejected_at"] = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     (proposal_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return proposal_dir
+
+
+def read_proposal_diff(registry: SkillRegistry, proposal_id: str) -> str:
+    proposal_dir = _resolve_proposal(registry, proposal_id)
+    diff_path = proposal_dir / "diff.md"
+    if diff_path.is_file():
+        return diff_path.read_text(encoding="utf-8")
+    current = (proposal_dir / "current.md").read_text(encoding="utf-8")
+    proposed = (proposal_dir / "proposed.md").read_text(encoding="utf-8")
+    diff = "\n".join(
+        difflib.unified_diff(
+            current.splitlines(),
+            proposed.splitlines(),
+            fromfile="current",
+            tofile="proposed",
+            lineterm="",
+        )
+    )
+    return diff + ("\n" if diff else "")
 
 
 def _iter_eval_cases(evals_dir: Path) -> Iterable[Mapping[str, object]]:

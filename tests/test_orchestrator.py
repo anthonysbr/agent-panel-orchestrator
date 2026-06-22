@@ -68,6 +68,27 @@ class FakeRunner:
 
 
 class OrchestratorTests(unittest.TestCase):
+    def test_auto_panel_respects_max_panelists(self) -> None:
+        registry = make_registry()
+        with mock.patch.object(registry, "available_provider_names", return_value=["codex", "claude", "cursor"]):
+            self.assertEqual(parse_panel_spec("auto", registry, max_panelists=2), ["claude", "codex"])
+
+    def test_retries_failed_panelist(self) -> None:
+        registry = make_registry()
+        runner = FakeRunner(["failed", "success", "success", "success"])
+        with mock.patch.object(registry, "detect_providers", return_value={"codex": available_provider_detection("codex")}):
+            with tempfile.TemporaryDirectory() as tmp:
+                outcome = AgentPanelOrchestrator(registry, runner=runner, runs_dir=Path(tmp)).run(
+                    task="test",
+                    panel="codex:2",
+                    judge="codex",
+                    dry_run=False,
+                    timeout_seconds=10,
+                    retries=1,
+                )
+        self.assertEqual(4, len(runner.calls))
+        self.assertIsNotNone(outcome.final_output_path)
+
     def test_parse_panel_with_counts(self) -> None:
         registry = make_registry()
         self.assertEqual(parse_panel_spec("codex:2", registry), ["codex", "codex"])

@@ -1,5 +1,7 @@
 # Agent Panel Orchestrator
 
+[![npm version](https://img.shields.io/npm/v/agent-panel-orchestrator.svg)](https://www.npmjs.com/package/agent-panel-orchestrator)
+
 Python CLI for running independent panelists on local agent CLIs, then synthesizing their answers through a judge pass.
 
 Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini on their own identity and tools. Skill references live under `third_party/`.
@@ -7,16 +9,20 @@ Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini
 ## Commands
 
 ```bash
+./panel doctor
 ./panel detect
+./panel detect --json
 ./panel prompt --agent codex --task "test"
-./panel prompt --agent codex --skills design --task "review this UI"
 ./panel run --dry-run --skills auto --panel codex:2 --judge codex -- "test"
-./panel run --skills auto --panel auto --judge auto -- "your hard question"
+./panel run --yes --skills auto --panel auto --judge auto -- "your hard question"
+./panel runs list
+./panel runs show 20260616T120000Z
 ./panel skills list
-./panel skills show design
-./panel skills improve design --from-runs runs --dry-run
+./panel skills diff design/20260615T120000Z
 ./panel export-rules --target /path/to/project
 ```
+
+Live runs ask for confirmation unless you pass `--yes`. Use `--max-panelists`, `--retries`, and `--json` where you need control or scripting.
 
 ## Install
 
@@ -24,7 +30,7 @@ Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini
 |--------|---------|----------|
 | npm | `npm install -g agent-panel-orchestrator` | Web/mobile projects, monorepos, teams on Node.js |
 | pipx | `pipx install agent-panel-orchestrator` | Python-first workflows on macOS, Linux, or Windows |
-| Homebrew | `brew tap entkreis/agent-panel` then `brew install agent-panel-orchestrator` | macOS and Linux terminal setups |
+| Homebrew | `brew tap anthonysbr/agent-panel` then `brew install agent-panel-orchestrator` (tap pending) | macOS and Linux terminal setups |
 | Windows zip | Download from [GitHub Releases](https://github.com/anthonysbr/agent-panel-orchestrator/releases) or run `packaging/windows/install.ps1` | Windows without a preferred package manager |
 | Git clone | `./install.sh` | Contributors and active development of this repo |
 
@@ -43,7 +49,7 @@ By default this symlinks `~/.local/bin/panel` to this repo's `panel` script.
 
 ```bash
 npm install -g agent-panel-orchestrator
-panel detect
+panel doctor
 ```
 
 Project-local install:
@@ -57,14 +63,15 @@ npx panel run --skills auto --panel auto --judge auto -- "your task"
 
 ```bash
 pipx install agent-panel-orchestrator
-panel detect
+panel doctor
 ```
 
 ### Homebrew
 
 ```bash
-brew tap entkreis/agent-panel https://github.com/anthonybatista/homebrew-agent-panel
-brew install agent-panel-orchestrator
+# brew tap anthonysbr/agent-panel  # coming soon
+# brew install agent-panel-orchestrator
+pipx install agent-panel-orchestrator
 ```
 
 See [`packaging/homebrew/README.md`](packaging/homebrew/README.md).
@@ -81,6 +88,28 @@ irm https://raw.githubusercontent.com/anthonysbr/agent-panel-orchestrator/main/p
 
 Winget manifest: [`packaging/winget/`](packaging/winget/).
 
+## Quick example
+
+Dry-run (no provider calls):
+
+```bash
+panel run --dry-run --panel codex:2 --judge codex -- "review this API design"
+panel runs list
+```
+
+Typical output tree:
+
+```text
+runs/20260616T120000Z/
+  run_plan.json
+  task_graph.json
+  task.md
+  panelists/
+  verification.md
+  decision.md
+  learning.md
+```
+
 ## Providers
 
 Provider subprocess adapters live in `config/agents.json`.
@@ -89,7 +118,7 @@ Provider subprocess adapters live in `config/agents.json`.
 - `claude`: runs `claude -p --output-format text --no-session-persistence`.
 - `cursor`: runs `agent -p --output-format text`.
 
-`./panel detect` checks Codex, Claude Code, Cursor, and Gemini as first-class providers.
+`panel detect` checks Codex, Claude Code, Cursor, and Gemini as first-class providers.
 
 ## Skills
 
@@ -103,21 +132,23 @@ Built-in skills live in `skills/`:
 Use `--skills auto` to select skills from the task text, `--skills none` to disable them, or pass an explicit list:
 
 ```bash
-./panel run --skills design,security --panel auto --judge auto -- "review this app"
+panel run --skills design,security --panel auto --judge auto -- "review this app"
 ```
 
 Project-specific skills go in `.panel/skills/` and override built-in skills with the same id.
 
 ```bash
-./panel skills create brand --target /path/to/project
+panel skills create brand --target /path/to/project
 ```
 
 Improvements are staged under `.panel/skill_proposals/` and only land after validation:
+
 ```bash
-./panel skills eval design
-./panel skills improve design --from-runs runs --dry-run
-./panel skills adopt design/20260615T120000Z
-./panel skills reject design/20260615T120000Z
+panel skills eval design
+panel skills improve design --from-runs runs --dry-run
+panel skills diff design/20260615T120000Z
+panel skills adopt design/20260615T120000Z
+panel skills reject design/20260615T120000Z
 ```
 
 ## Run Artifacts
@@ -147,7 +178,6 @@ python3 -m unittest discover tests
 
 ## Contributing
 
-PRs welcome. For bugs, open an issue with the command you ran and what went wrong.
+See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome; bugs → issue with the command you ran.
 
 Email: [hallo@entkreis.de](mailto:hallo@entkreis.de) (Anthony Batista).
-

@@ -43,6 +43,5 @@ for (const exe of candidates) {
   process.exit(result.status ?? 1);
 }
 
-console.error("panel: error: Python 3.10+ is required but was not found on PATH.");
-console.error("Install Python from https://www.python.org/downloads/ or run: pipx install agent-panel-orchestrator");
+console.error("panel: error: Python 3.10+ is required. Install from https://www.python.org/downloads/ or run: pipx install agent-panel-orchestrator");
 process.exit(1);

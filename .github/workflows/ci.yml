@@ -40,6 +40,23 @@ jobs:
         run: npm run test:smoke
         working-directory: npm
 
+  windows-npm:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Smoke test npm launcher on Windows
+        run: npm run test:smoke
+        working-directory: npm
+
   package-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -56,3 +73,13 @@ jobs:
           python -m pip install dist/agent_panel_orchestrator-*.whl
           panel skills list
           panel run --dry-run --panel codex:2 --judge codex --runs-dir /tmp/panel-ci -- "ci smoke"
+
+  version-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version sync
+        run: |
+          chmod +x scripts/check_version_sync.sh
+          ./scripts/check_version_sync.sh

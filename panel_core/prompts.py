@@ -171,16 +171,27 @@ Read every successful panelist response in full. Treat failed, missing, timeout,
 """
 
 
+def truncate_for_judge(text: str, max_chars: int = 12000) -> str:
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    last_break = cut.rfind("\n\n")
+    if last_break > max_chars // 2:
+        cut = cut[:last_break]
+    return cut.rstrip() + "\n\n[truncated]"
+
+
 def _format_panel_responses(responses: List[PanelResponse]) -> str:
     if not responses:
         return "No panelist responses were available."
 
     blocks = []
     for response in responses:
+        output = truncate_for_judge(response.output) if response.output else response.output
         blocks.append(
             f"""<panelist_response id="{response.panelist_id}" provider="{response.provider}" status="{response.status}">
 <output>
-{response.output}
+{output}
 </output>
 <error>
 {response.error}

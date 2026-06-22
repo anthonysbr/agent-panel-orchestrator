@@ -9,8 +9,10 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,33 +23,79 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          registry-url: https://registry.npmjs.org
+
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build release artifacts
         run: |
           chmod +x scripts/release.sh
-          ./scripts/release.sh "${GITHUB_REF_NAME#v}"
+          ./scripts/release.sh "${{ steps.version.outputs.version }}"
 
-      - name: Publish Python package
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: |
-          python -m pip install twine build
-          python -m twine upload dist/wheels/*
-        if: ${{ secrets.PYPI_TOKEN != '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
 
-      - name: Publish npm package
-        working-directory: npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
-        if: ${{ secrets.NPM_TOKEN != '' }}
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist
 
-      - name: Upload GitHub release assets
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/wheels/*.whl
             dist/release/*.tgz
             dist/release/*.zip
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Publish to PyPI
+        run: |
+          python -m pip install twine
+          python -m twine upload dist/wheels/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish to npm
+        working-directory: npm
+        run: |
+          node scripts/prepack.js
+          VERSION="${{ needs.build.outputs.version }}"
+          if npm view "agent-panel-orchestrator@${VERSION}" version 2>/dev/null; then
+            echo "agent-panel-orchestrator@${VERSION} already on npm"
+            exit 0
+          fi
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

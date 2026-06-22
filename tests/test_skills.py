@@ -95,6 +95,44 @@ class SkillTests(unittest.TestCase):
 
         self.assertEqual("rejected", metadata["status"])
 
+    def test_eval_supports_must_not_include(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".panel" / "skills" / "lint"
+            root.mkdir(parents=True)
+            (root / "skill.json").write_text(
+                json.dumps(
+                    {
+                        "id": "lint",
+                        "name": "Lint",
+                        "version": "1.0.0",
+                        "description": "Lint checks",
+                        "triggers": ["lint"],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (root / "instructions.md").write_text("# Lint\n\nUse eslint.\n", encoding="utf-8")
+            (root / "evals").mkdir()
+            (root / "evals" / "basic.jsonl").write_text(
+                json.dumps({"id": "basic", "must_include": ["eslint"], "must_not_include": ["todo"]})
+                + "\n",
+                encoding="utf-8",
+            )
+            skill = SkillRegistry(project_root=Path(tmp)).get_skill("lint")
+            result = evaluate_skill(skill)
+            self.assertEqual(1.0, result.score)
+
+    def test_read_proposal_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = SkillRegistry(project_root=root)
+            proposal = improve_skill(registry, "design", root / "missing-runs", dry_run=True)
+            from panel_core.skills import read_proposal_diff
+
+            diff = read_proposal_diff(registry, str(proposal))
+            self.assertTrue(diff.endswith("\n") or diff == "")
+
 
 if __name__ == "__main__":
     unittest.main()
