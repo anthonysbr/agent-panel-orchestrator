@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .audit_loop import AuditLoopOrchestrator
 from .branding import BRAND_NAME
 from .config import load_config
 from .doctor import run_doctor
@@ -17,6 +18,7 @@ from .runs import list_runs, load_run, run_detail_to_dict, run_summary_to_dict
 from .skills import (
     SkillRegistry,
     adopt_proposal,
+    evaluate_all_skills,
     evaluate_skill,
     improve_skill,
     read_proposal_diff,
@@ -52,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--timeout", type=int, default=1800, help="Per-provider timeout in seconds")
     run_parser.add_argument("--max-panelists", type=int, default=None, help="Cap panel size for auto and explicit specs")
     run_parser.add_argument("--retries", type=int, default=0, help="Retry failed panelists up to N times (max 2)")
+    run_parser.add_argument("--audit-loop", action="store_true", help="Run builder → gates → audit panel → judge until clean or max rounds")
+    run_parser.add_argument("--builder", default="auto", help="Builder provider for --audit-loop (auto uses first panelist provider)")
+    run_parser.add_argument("--max-rounds", type=int, default=3, help="Maximum audit-loop rounds (default 3)")
     run_parser.add_argument("--runs-dir", type=Path, default=None, help="Directory for run artifacts")
     run_parser.add_argument("task", nargs=argparse.REMAINDER)
 
@@ -72,7 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("skill_id")
     create_parser.add_argument("--target", type=Path, default=Path("."))
     eval_parser = skills_subparsers.add_parser("eval", help="Evaluate a skill's static checks")
-    eval_parser.add_argument("skill_id")
+    eval_parser.add_argument("skill_id", nargs="?")
+    eval_parser.add_argument("--all", action="store_true", help="Evaluate every available skill")
     improve_parser = skills_subparsers.add_parser("improve", help="Create a proposed skill improvement from run artifacts")
     improve_parser.add_argument("skill_id")
     improve_parser.add_argument("--from-runs", type=Path, default=Path("runs"))
@@ -206,22 +212,70 @@ def _cmd_run(args: argparse.Namespace, registry: ProviderRegistry) -> int:
         raise ValueError("run requires a task after --, or piped stdin")
 
     orchestrator = AgentPanelOrchestrator(registry=registry, runs_dir=args.runs_dir)
+    loop_label = "audit-loop" if args.audit_loop else "run"
     if not args.dry_run and not args.yes:
         preview = orchestrator.preview(
             task=task,
             panel=args.panel,
             judge=args.judge,
-            skills_spec=args.skills,
+            skills_spec=args.skills if not args.audit_loop else (args.skills if args.skills != "auto" else "audit-loop,code-review"),
             max_panelists=args.max_panelists,
         )
         skills = ", ".join(preview.skills) if preview.skills else "none"
+        extra = ""
+        if args.audit_loop:
+            extra = f"  Builder: {args.builder}  Max rounds: {args.max_rounds}"
         print(
-            f"Panel: {preview.panel_slug}  Judge: {preview.judge}  Skills: {skills}  Timeout: {args.timeout}s"
+            f"Panel: {preview.panel_slug}  Judge: {preview.judge}  Skills: {skills}  Timeout: {args.timeout}s{extra}"
         )
+        if args.audit_loop:
+            print(f"Mode: audit-loop ({loop_label})")
         print(f"Panelists: {len(preview.panelists)} live provider calls + 1 judge call")
         if not _confirm_live_run():
             print("Cancelled.")
             return 0
+
+    if args.audit_loop:
+        loop = AuditLoopOrchestrator(registry=registry, runs_dir=args.runs_dir)
+        outcome = loop.run_audit_loop(
+            task=task,
+            builder=args.builder,
+            panel=args.panel,
+            judge=args.judge,
+            dry_run=args.dry_run,
+            timeout_seconds=args.timeout,
+            skills_spec=args.skills if args.skills != "auto" else "audit-loop,code-review",
+            max_panelists=args.max_panelists,
+            max_rounds=args.max_rounds,
+            retries=args.retries,
+        )
+        payload = {
+            "run_dir": outcome.plan.run_dir,
+            "panel": outcome.plan.panel_slug,
+            "judge": outcome.plan.judge,
+            "skills": outcome.plan.skills,
+            "dry_run": outcome.plan.dry_run,
+            "audit_loop": True,
+            "stopped_reason": outcome.stopped_reason,
+            "rounds": len(outcome.rounds),
+            "final_output": str(outcome.final_output_path) if outcome.final_output_path else None,
+        }
+        if args.json:
+            print(json.dumps(payload, indent=2))
+            return 0 if outcome.stopped_reason in {"clean", "dry-run"} else 1
+
+        print(f"Run directory: {outcome.plan.run_dir}")
+        print(f"Audit loop stopped: {outcome.stopped_reason}")
+        print(f"Rounds completed: {len(outcome.rounds)}")
+        if args.dry_run:
+            print("Dry run complete. Provider CLIs were not called.")
+            return 0
+        if outcome.final_output_path:
+            print(f"Final answer: {outcome.final_output_path}")
+            print()
+            print(outcome.final_output_path.read_text(encoding="utf-8"), end="")
+            return 0
+        return 1
 
     outcome = orchestrator.run(
         task=task,
@@ -348,6 +402,34 @@ def _cmd_skills(args: argparse.Namespace) -> int:
         print(f"Created skill: {path}")
         return 0
     if args.skills_command == "eval":
+        if args.all:
+            results = evaluate_all_skills(registry)
+            if args.json:
+                return _emit_json(
+                    [
+                        {
+                            "skill_id": result.skill_id,
+                            "cases": result.cases,
+                            "passed": result.passed,
+                            "score": result.score,
+                            "failures": result.failures,
+                        }
+                        for result in results
+                    ]
+                )
+            failed = False
+            for result in results:
+                print(f"Skill: {result.skill_id}")
+                print(f"Cases: {result.cases}")
+                print(f"Passed: {result.passed}")
+                print(f"Score: {result.score:.2f}")
+                for failure in result.failures:
+                    print(f"Failure: {failure}")
+                    failed = True
+                print()
+            return 1 if failed or any(result.score != 1.0 for result in results) else 0
+        if not args.skill_id:
+            raise ValueError("skills eval requires a skill_id or --all")
         result = evaluate_skill(registry.get_skill(args.skill_id))
         if args.json:
             return _emit_json(

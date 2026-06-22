@@ -1,0 +1,1 @@
+{"id": "audit-loop-core", "task": "Run an audit loop on this refactor.", "must_include": ["race", "gate"], "must_not_include": ["looks good to me"], "min_length": 120}

@@ -15,6 +15,7 @@ Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini
 ./panel prompt --agent codex --task "test"
 ./panel run --dry-run --skills auto --panel codex:2 --judge codex -- "test"
 ./panel run --yes --skills auto --panel auto --judge auto -- "your hard question"
+./panel run --audit-loop --dry-run --builder codex --panel codex:2 --judge claude --max-rounds 3 -- "fix race in worker pool"
 ./panel runs list
 ./panel runs show 20260616T120000Z
 ./panel skills list
@@ -22,7 +23,22 @@ Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini
 ./panel export-rules --target /path/to/project
 ```
 
-Live runs ask for confirmation unless you pass `--yes`. Use `--max-panelists`, `--retries`, and `--json` where you need control or scripting.
+Live runs ask for confirmation unless you pass `--yes`. Use `--max-panelists`, `--retries`, `--audit-loop`, `--max-rounds`, and `--json` where you need control or scripting.
+
+Set `PANEL_PROVIDER_EMPTY_RETRIES=1` (default) to transparently retry provider turns that return empty output.
+
+## Related tools
+
+| Tool | Use for |
+|------|---------|
+| [evolve-loop](https://github.com/mickeyyaya/evolve-loop) | Overnight autonomous Build→Audit→Ship cycles with deterministic gates (Claude Code, Codex CLI, Gemini CLI) |
+| [UltraCode-Shim](https://github.com/OnlyTerp/UltraCode-Shim) | Optional: run Claude Code panelists through other models via a local proxy (`panel` does not manage this) |
+
+- **Hard decisions / multi-model review** → `panel run`
+- **Implement until merge-safe** → evolve-loop, or `panel run --audit-loop` in this repo
+- **Claude Code + cheaper worker models** → configure UltraCode-Shim separately
+
+See [`packaging/RELEASE.md`](packaging/RELEASE.md) for tagging and PyPI/npm publish.
 
 ## Install
 
@@ -88,6 +104,18 @@ irm https://raw.githubusercontent.com/anthonysbr/agent-panel-orchestrator/main/p
 
 Winget manifest: [`packaging/winget/`](packaging/winget/).
 
+## Audit loop
+
+`--audit-loop` runs **builder → deterministic gates → audit panel → judge** until gates pass, the judge emits `<promise>CLEAN</promise>`, or `--max-rounds` is reached.
+
+```bash
+cp .panel/gates.yaml.example .panel/gates.yaml
+panel run --audit-loop --dry-run --builder auto --panel auto --judge auto -- "implement feature X"
+panel run --yes --audit-loop --max-rounds 5 -- "fix flaky tests and race conditions"
+```
+
+Each round writes under `runs/<timestamp>/rounds/NN/` (`builder.*`, `gates.json`, audit prompts, judge output). Default gates run `compileall` and `unittest` when `.panel/gates.yaml` is missing.
+
 ## Quick example
 
 Dry-run (no provider calls):
@@ -128,6 +156,7 @@ Built-in skills live in `skills/`:
 - `code-review`
 - `security`
 - `research`
+- `audit-loop`
 
 Use `--skills auto` to select skills from the task text, `--skills none` to disable them, or pass an explicit list:
 
@@ -145,6 +174,7 @@ Improvements are staged under `.panel/skill_proposals/` and only land after vali
 
 ```bash
 panel skills eval design
+panel skills eval --all
 panel skills improve design --from-runs runs --dry-run
 panel skills diff design/20260615T120000Z
 panel skills adopt design/20260615T120000Z

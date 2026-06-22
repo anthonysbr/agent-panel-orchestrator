@@ -18,8 +18,8 @@ def make_config() -> OrchestratorConfig:
                 display_name="Codex CLI",
                 binary="codex",
                 version_args=["--version"],
-                mode="stdin_to_output_file",
-                command=["codex", "exec", "-o", "{output_file}", "-"],
+        mode="stdin_stdout",
+        command=["codex", "-"],
             )
         },
         external_tools={
@@ -75,6 +75,29 @@ class ProviderTests(unittest.TestCase):
 
         self.assertEqual(result.status, "timeout")
         self.assertIn("timed out", result.error)
+
+    @mock.patch("panel_core.providers.subprocess.run")
+    @mock.patch("panel_core.providers.shutil.which")
+    def test_runner_retries_empty_output(self, which: mock.Mock, run: mock.Mock) -> None:
+        which.return_value = "/bin/codex"
+        run.side_effect = [
+            subprocess.CompletedProcess(["codex"], 0, "", ""),
+            subprocess.CompletedProcess(["codex"], 0, "answer\n", ""),
+        ]
+        runner = ProviderRunner(ProviderRegistry(make_config()))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = runner.run(
+                "codex",
+                "prompt",
+                Path(tmp) / "out.md",
+                Path(tmp) / "log.txt",
+                timeout_seconds=3,
+                empty_retries=1,
+            )
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(run.call_count, 2)
 
 
 if __name__ == "__main__":

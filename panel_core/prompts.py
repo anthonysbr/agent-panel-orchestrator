@@ -42,6 +42,22 @@ Research or analysis tasks: synthesize the independent answers into:
 
 Treat failed, missing, timeout, or empty panelists as absent, not as agreement. Attribute material decisions to panelist ids/providers. Evidence from tool use, primary sources, or actual execution outranks unsupported assertion."""
 
+BUILDER_RUBRIC = """Builder protocol:
+
+Implement or fix the requested work in the repository using your runtime tools. Do not declare completion from prose alone. Run relevant tests or checks when possible. Leave the tree in a verifiable state. If blocked, state the blocker with evidence."""
+
+AUDITOR_RUBRIC = """Auditor protocol:
+
+Assume the builder may have missed bugs, race conditions, regressions, edge cases, or incomplete tests. Search the codebase and changed areas until you find concrete issues or can justify none remain. List findings with file paths and severity. Do not rubber-stamp."""
+
+AUDIT_JUDGE_RUBRIC = """Audit judge protocol:
+
+Review gate results, builder output, and independent auditor findings. If deterministic gates failed or any material issue remains, list required follow-ups and do NOT emit the clean promise. Only when gates passed and no material issue remains, end with exactly:
+
+<promise>CLEAN</promise>
+
+Never emit the clean promise to exit early."""
+
 
 ADAPTERS = {
     "codex": """Runtime adapter for Codex.
@@ -168,6 +184,155 @@ Judge provider: {judge}
 
 ## Judge Instructions
 Read every successful panelist response in full. Treat failed, missing, timeout, or empty panelists as absent, not as silent agreement. First classify the user deliverable as artifact or research/analysis according to the rubric. Then produce the final answer followed by the audit trail required by the rubric. Attribute material decisions to panelist ids and providers.
+"""
+
+
+def render_builder_prompt(
+    agent: str,
+    task: str,
+    current_date: Optional[date] = None,
+    behavior_reference: Optional[str] = None,
+    skill_context: str = "",
+) -> str:
+    current_date = current_date or date.today()
+    behavior_reference = behavior_reference if behavior_reference is not None else load_behavior_reference()
+    adapter = _adapter_for(agent)
+    return f"""# {BRAND_NAME} Builder Prompt
+
+## Provider Adapter
+{adapter}
+
+Current runtime date: {current_date.isoformat()}.
+
+## Behavior Reference
+
+<behavior_reference>
+{behavior_reference}
+</behavior_reference>
+
+## Builder Rubric
+
+<builder_rubric>
+{BUILDER_RUBRIC}
+</builder_rubric>
+{_format_skill_context(skill_context)}
+
+## User Task Verbatim
+<user_task_verbatim>
+{task}
+</user_task_verbatim>
+"""
+
+
+def render_auditor_prompt(
+    agent: str,
+    task: str,
+    current_date: Optional[date] = None,
+    behavior_reference: Optional[str] = None,
+    skill_context: str = "",
+    gate_report: str = "",
+    builder_output: str = "",
+) -> str:
+    current_date = current_date or date.today()
+    behavior_reference = behavior_reference if behavior_reference is not None else load_behavior_reference()
+    adapter = _adapter_for(agent)
+    gate_block = gate_report.strip() or "No gate report available."
+    builder_block = truncate_for_judge(builder_output) if builder_output else "No builder output available."
+    return f"""# {BRAND_NAME} Auditor Prompt
+
+## Provider Adapter
+{adapter}
+
+Current runtime date: {current_date.isoformat()}.
+
+## Behavior Reference
+
+<behavior_reference>
+{behavior_reference}
+</behavior_reference>
+
+## Auditor Rubric
+
+<auditor_rubric>
+{AUDITOR_RUBRIC}
+</auditor_rubric>
+{_format_skill_context(skill_context)}
+
+## Gate Results
+{gate_block}
+
+## Builder Output
+<builder_output>
+{builder_block}
+</builder_output>
+
+## User Task Verbatim
+<user_task_verbatim>
+{task}
+</user_task_verbatim>
+
+## Auditor Instructions
+Work independently. Do not assume other auditors agree with you. Return concrete findings or an evidence-backed clean bill of health.
+"""
+
+
+def render_audit_judge_prompt(
+    judge: str,
+    task: str,
+    panel_slug: str,
+    responses: Iterable[PanelResponse],
+    current_date: Optional[date] = None,
+    behavior_reference: Optional[str] = None,
+    skill_context: str = "",
+    gate_summary=None,
+) -> str:
+    current_date = current_date or date.today()
+    behavior_reference = behavior_reference if behavior_reference is not None else load_behavior_reference()
+    adapter = _adapter_for(judge)
+    response_blocks = _format_panel_responses(list(responses))
+    if gate_summary is not None:
+        from .gates import render_gate_report
+
+        gate_block = render_gate_report(gate_summary)
+    else:
+        gate_block = "No gate results available."
+    return f"""# {BRAND_NAME} Audit Judge Prompt
+
+## Provider Adapter
+{adapter}
+
+Current runtime date: {current_date.isoformat()}.
+
+## Behavior Reference
+
+<behavior_reference>
+{behavior_reference}
+</behavior_reference>
+
+## Audit Judge Rubric
+
+<audit_judge_rubric>
+{AUDIT_JUDGE_RUBRIC}
+</audit_judge_rubric>
+{_format_skill_context(skill_context)}
+
+## Run Metadata
+Panel slug: {panel_slug}
+Judge provider: {judge}
+
+## Gate Results
+{gate_block}
+
+## User Task Verbatim
+<user_task_verbatim>
+{task}
+</user_task_verbatim>
+
+## Independent Auditor Responses
+{response_blocks}
+
+## Judge Instructions
+Refute weak claims. Require evidence. Follow the audit judge rubric exactly.
 """
 
 

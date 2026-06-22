@@ -1,0 +1,17 @@
+{
+  "id": "audit-loop",
+  "name": "Audit Loop",
+  "version": "1.0.0",
+  "description": "Keep searching for bugs, race conditions, regressions, and incomplete tests until gates pass and auditors find nothing material.",
+  "triggers": [
+    "audit loop",
+    "audit-loop",
+    "keep searching",
+    "race condition",
+    "self review",
+    "until clean",
+    "refactor",
+    "implement",
+    "fix bugs"
+  ]
+}

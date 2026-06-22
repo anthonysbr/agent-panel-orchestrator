@@ -1,0 +1,7 @@
+gates:
+  - name: compileall
+    command: python3 -m compileall panel_core tests -q
+  - name: unittest
+    command: python3 -m unittest discover tests -q
+  - name: version-sync
+    command: ./scripts/check_version_sync.sh

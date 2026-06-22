@@ -3,7 +3,7 @@
 Use this skill for reviewing code changes, pull requests, diffs, refactors, and implementation plans.
 
 Review in this order:
-1. Correctness, edge cases, data loss, race conditions, and failure modes.
+1. Correctness, edge cases, data loss, race conditions, regressions, and failure modes.
 2. Security-sensitive behavior: trust boundaries, input validation, auth checks, secrets, and unsafe shell or network calls.
 3. Tests: missing coverage, brittle assertions, fixture gaps, and unverified behavior.
 4. Maintainability: unnecessary abstraction, duplicated logic, naming, ownership boundaries, and reuse of existing helpers.

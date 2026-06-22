@@ -225,6 +225,10 @@ def evaluate_skill(skill: Skill, instructions: Optional[str] = None) -> EvalResu
     return EvalResult(skill_id=skill.skill_id, cases=len(cases), passed=passed, score=score, failures=failures)
 
 
+def evaluate_all_skills(registry: SkillRegistry) -> List[EvalResult]:
+    return [evaluate_skill(skill) for skill in registry.list_skills()]
+
+
 def improve_skill(
     registry: SkillRegistry,
     skill_id: str,

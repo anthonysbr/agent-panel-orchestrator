@@ -3,8 +3,8 @@ class AgentPanelOrchestrator < Formula
 
   desc "Run independent agent panels through Codex, Claude Code, Cursor, and Gemini CLIs"
   homepage "https://github.com/anthonysbr/agent-panel-orchestrator"
-  url "https://github.com/anthonysbr/agent-panel-orchestrator/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  url "https://github.com/anthonysbr/agent-panel-orchestrator/archive/refs/tags/v0.2.0.tar.gz"
+  sha256 "bd6ed0505f790c71e0818877d79706843fe95d68e4834f012a52393c00279105"
   license "MIT"
   head "https://github.com/anthonysbr/agent-panel-orchestrator.git", branch: "main"
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -112,6 +113,7 @@ class ProviderRunner:
         output_path: Path,
         log_path: Path,
         timeout_seconds: int,
+        empty_retries: Optional[int] = None,
     ) -> ProviderRunResult:
         provider = self.registry.require_provider(provider_name)
         detection = self.registry.detect_command(provider, "provider")
@@ -128,66 +130,86 @@ class ProviderRunner:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix=f"panel-{provider_name}.") as scratch:
-            command = self._render_command(
-                provider.command,
-                prompt=prompt,
-                output_path=output_path,
-                scratch_dir=Path(scratch),
-            )
-            try:
-                completed = self._execute(provider, command, prompt, Path(scratch), timeout_seconds)
-            except subprocess.TimeoutExpired as exc:
-                log_path.write_text(str(exc), encoding="utf-8")
-                return ProviderRunResult(
-                    provider=provider_name,
-                    status="timeout",
-                    output="",
-                    returncode=None,
-                    command=command,
-                    error=f"provider timed out after {timeout_seconds} seconds",
+        retry_limit = self._empty_retry_limit() if empty_retries is None else max(0, empty_retries)
+        max_attempts = retry_limit + 1
+
+        for attempt in range(max_attempts):
+            with tempfile.TemporaryDirectory(prefix=f"panel-{provider_name}.") as scratch:
+                command = self._render_command(
+                    provider.command,
+                    prompt=prompt,
+                    output_path=output_path,
+                    scratch_dir=Path(scratch),
                 )
+                try:
+                    completed = self._execute(provider, command, prompt, Path(scratch), timeout_seconds)
+                except subprocess.TimeoutExpired as exc:
+                    log_path.write_text(str(exc), encoding="utf-8")
+                    if attempt < max_attempts - 1:
+                        continue
+                    return ProviderRunResult(
+                        provider=provider_name,
+                        status="timeout",
+                        output="",
+                        returncode=None,
+                        command=command,
+                        error=f"provider timed out after {timeout_seconds} seconds",
+                    )
 
-            log_path.write_text(
-                "COMMAND: " + " ".join(command) + "\n\n"
-                + "STDOUT:\n" + (completed.stdout or "")
-                + "\n\nSTDERR:\n" + (completed.stderr or ""),
-                encoding="utf-8",
-            )
+                log_text = (
+                    "COMMAND: " + " ".join(command) + "\n\n"
+                    + "STDOUT:\n" + (completed.stdout or "")
+                    + "\n\nSTDERR:\n" + (completed.stderr or "")
+                )
+                if attempt:
+                    log_text = f"ATTEMPT: {attempt + 1}\n\n" + log_text
+                log_path.write_text(log_text, encoding="utf-8")
 
-            if provider.mode == "stdin_to_output_file":
-                output = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
-            else:
-                output = completed.stdout or ""
-                output_path.write_text(output, encoding="utf-8")
+                if provider.mode == "stdin_to_output_file":
+                    output = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+                else:
+                    output = completed.stdout or ""
+                    output_path.write_text(output, encoding="utf-8")
 
-            if completed.returncode != 0:
+                if completed.returncode != 0:
+                    return ProviderRunResult(
+                        provider=provider_name,
+                        status="failed",
+                        output=output,
+                        returncode=completed.returncode,
+                        command=command,
+                        error=(completed.stderr or completed.stdout or "").strip(),
+                    )
+
+                if not output.strip():
+                    if attempt < max_attempts - 1:
+                        continue
+                    return ProviderRunResult(
+                        provider=provider_name,
+                        status="empty",
+                        output=output,
+                        returncode=completed.returncode,
+                        command=command,
+                        error="provider completed but produced no output",
+                    )
+
                 return ProviderRunResult(
                     provider=provider_name,
-                    status="failed",
+                    status="success",
                     output=output,
                     returncode=completed.returncode,
                     command=command,
-                    error=(completed.stderr or completed.stdout or "").strip(),
                 )
 
-            if not output.strip():
-                return ProviderRunResult(
-                    provider=provider_name,
-                    status="empty",
-                    output=output,
-                    returncode=completed.returncode,
-                    command=command,
-                    error="provider completed but produced no output",
-                )
+        raise RuntimeError("provider run ended without a result")
 
-            return ProviderRunResult(
-                provider=provider_name,
-                status="success",
-                output=output,
-                returncode=completed.returncode,
-                command=command,
-            )
+    @staticmethod
+    def _empty_retry_limit() -> int:
+        raw = os.environ.get("PANEL_PROVIDER_EMPTY_RETRIES", "1").strip()
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return 1
 
     def _execute(
         self,
