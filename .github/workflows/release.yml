@@ -54,6 +54,7 @@ jobs:
             dist/release/*.zip
 
   publish-pypi:
+    if: vars.ENABLE_PYPI == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment: release
