@@ -2,7 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/agent-panel-orchestrator.svg)](https://www.npmjs.com/package/agent-panel-orchestrator)
 
-Python CLI for running independent panelists on local agent CLIs, then synthesizing their answers through a judge pass.
+CLI for running independent panelists on local agent CLIs, then synthesizing their answers through a judge pass.
+
+Install via npm, pipx, Homebrew, or git clone. Same `panel` command; needs Python 3.10+.
 
 Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini on their own identity and tools. Skill references live under `third_party/`.
 
