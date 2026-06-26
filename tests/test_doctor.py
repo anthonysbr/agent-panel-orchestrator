@@ -45,6 +45,7 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("python", report)
         self.assertIn("install", report)
         self.assertIn("providers", report)
+        self.assertIn("gates", report)
         self.assertIn("panel_version", report)
         self.assertTrue(report["python"]["ok"])
         self.assertTrue(report["providers"]["ok"])

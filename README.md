@@ -17,7 +17,8 @@ Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini
 ./panel prompt --agent codex --task "test"
 ./panel run --dry-run --skills auto --panel codex:2 --judge codex -- "test"
 ./panel run --yes --skills auto --panel auto --judge auto -- "your hard question"
-./panel run --audit-loop --dry-run --builder codex --panel codex:2 --judge claude --max-rounds 3 -- "fix race in worker pool"
+./panel run --audit-loop --dry-run --builder codex --panel codex:2 --judge claude --workspace project --max-rounds 3 -- "fix race in worker pool"
+./panel run --yes --audit-loop --ci --workspace project --max-rounds 5 -- "fix flaky tests and race conditions"
 ./panel runs list
 ./panel runs show 20260616T120000Z
 ./panel skills list
@@ -25,9 +26,11 @@ Runtime adapters in provider prompts keep Codex, Claude Code, Cursor, and Gemini
 ./panel export-rules --target /path/to/project
 ```
 
-Live runs ask for confirmation unless you pass `--yes`. Use `--max-panelists`, `--retries`, `--audit-loop`, `--max-rounds`, and `--json` where you need control or scripting.
+Live runs ask for confirmation unless you pass `--yes` or `--ci`. Use `--workspace project` for audit-loop (default) or repo-aware panel runs; `--workspace scratch` keeps the legacy isolated prompt sandbox.
 
 Set `PANEL_PROVIDER_EMPTY_RETRIES=1` (default) to transparently retry provider turns that return empty output.
+
+Production verification: `./scripts/verify_fixtures.sh` and [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
 
 ## Related tools
 

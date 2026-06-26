@@ -51,6 +51,13 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--skills", default="auto", help="auto, none, or a comma-separated skill list")
     run_parser.add_argument("--dry-run", action="store_true", help="Write prompts and run plan without calling providers")
     run_parser.add_argument("--yes", "-y", action="store_true", help="Skip live-run confirmation prompt")
+    run_parser.add_argument("--ci", action="store_true", help="Non-interactive mode with structured exit codes for automation")
+    run_parser.add_argument(
+        "--workspace",
+        choices=["scratch", "project"],
+        default=None,
+        help="Provider working directory: scratch (default for panel run) or project (default for audit-loop)",
+    )
     run_parser.add_argument("--timeout", type=int, default=1800, help="Per-provider timeout in seconds")
     run_parser.add_argument("--max-panelists", type=int, default=None, help="Cap panel size for auto and explicit specs")
     run_parser.add_argument("--retries", type=int, default=0, help="Retry failed panelists up to N times (max 2)")
@@ -67,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     runs_show = runs_sub.add_parser("show", help="Show one run")
     runs_show.add_argument("run_id")
     runs_show.add_argument("--runs-dir", type=Path, default=Path("runs"))
+    runs_show.add_argument("--rounds", action="store_true", help="Show audit-loop round summary")
 
     skills_parser = subparsers.add_parser("skills", parents=[json_parent], help="List, inspect, create, evaluate, and improve skills")
     skills_subparsers = skills_parser.add_subparsers(dest="skills_command", required=True)
@@ -173,7 +181,7 @@ def _cmd_detect(registry: ProviderRegistry, args: argparse.Namespace) -> int:
 
 
 def _cmd_doctor(registry: ProviderRegistry, args: argparse.Namespace) -> int:
-    report = run_doctor(registry)
+    report = run_doctor(registry, project_root=Path.cwd())
     if args.json:
         print(json.dumps(report, indent=2))
         return 0 if report.get("ok") else 1
@@ -189,6 +197,15 @@ def _cmd_doctor(registry: ProviderRegistry, args: argparse.Namespace) -> int:
         version = f" ({item['version']})" if item.get("version") else ""
         path = f" at {item['path']}" if item.get("path") else ""
         print(f"  {item['name']}: {status}{version}{path}")
+        if item.get("hint"):
+            print(f"    → {item['hint']}")
+    gates = report["gates"]
+    gate_status = "configured" if gates["configured"] else "defaults"
+    print(f"Gates: {gate_status} ({gates['path']})")
+    if gates.get("gates"):
+        print(f"  checks: {', '.join(gates['gates'])}")
+    if gates.get("hint"):
+        print(f"  → {gates['hint']}")
     return 0 if report.get("ok") else 1
 
 
@@ -206,15 +223,31 @@ def _confirm_live_run() -> bool:
     return answer in {"y", "yes"}
 
 
+def _resolve_workspace(args: argparse.Namespace) -> str:
+    if args.workspace:
+        return args.workspace
+    return "project" if args.audit_loop else "scratch"
+
+
+def _audit_exit_code(stopped_reason: str, dry_run: bool) -> int:
+    if dry_run or stopped_reason == "clean":
+        return 0
+    if stopped_reason == "max-rounds":
+        return 1
+    return 2
+
+
 def _cmd_run(args: argparse.Namespace, registry: ProviderRegistry) -> int:
     task = _parse_task(args.task)
     if not task.strip():
         raise ValueError("run requires a task after --, or piped stdin")
 
-    orchestrator = AgentPanelOrchestrator(registry=registry, runs_dir=args.runs_dir)
+    workspace = _resolve_workspace(args)
+    yes = args.yes or args.ci
     loop_label = "audit-loop" if args.audit_loop else "run"
-    if not args.dry_run and not args.yes:
-        preview = orchestrator.preview(
+    if not args.dry_run and not yes:
+        preview_orchestrator = AgentPanelOrchestrator(registry=registry, runs_dir=args.runs_dir, workspace=workspace)
+        preview = preview_orchestrator.preview(
             task=task,
             panel=args.panel,
             judge=args.judge,
@@ -226,17 +259,19 @@ def _cmd_run(args: argparse.Namespace, registry: ProviderRegistry) -> int:
         if args.audit_loop:
             extra = f"  Builder: {args.builder}  Max rounds: {args.max_rounds}"
         print(
-            f"Panel: {preview.panel_slug}  Judge: {preview.judge}  Skills: {skills}  Timeout: {args.timeout}s{extra}"
+            f"Panel: {preview.panel_slug}  Judge: {preview.judge}  Skills: {skills}"
+            f"  Workspace: {workspace}  Timeout: {args.timeout}s{extra}"
         )
+        print(f"Task: {task[:200]}{'…' if len(task) > 200 else ''}")
         if args.audit_loop:
-            print(f"Mode: audit-loop ({loop_label})")
+            print("Mode: audit-loop")
         print(f"Panelists: {len(preview.panelists)} live provider calls + 1 judge call")
         if not _confirm_live_run():
             print("Cancelled.")
-            return 0
+            return 130
 
     if args.audit_loop:
-        loop = AuditLoopOrchestrator(registry=registry, runs_dir=args.runs_dir)
+        loop = AuditLoopOrchestrator(registry=registry, runs_dir=args.runs_dir, workspace=workspace)
         outcome = loop.run_audit_loop(
             task=task,
             builder=args.builder,
@@ -256,13 +291,15 @@ def _cmd_run(args: argparse.Namespace, registry: ProviderRegistry) -> int:
             "skills": outcome.plan.skills,
             "dry_run": outcome.plan.dry_run,
             "audit_loop": True,
+            "workspace": workspace,
             "stopped_reason": outcome.stopped_reason,
             "rounds": len(outcome.rounds),
             "final_output": str(outcome.final_output_path) if outcome.final_output_path else None,
         }
+        exit_code = _audit_exit_code(outcome.stopped_reason, args.dry_run)
         if args.json:
             print(json.dumps(payload, indent=2))
-            return 0 if outcome.stopped_reason in {"clean", "dry-run"} else 1
+            return exit_code
 
         print(f"Run directory: {outcome.plan.run_dir}")
         print(f"Audit loop stopped: {outcome.stopped_reason}")
@@ -274,9 +311,10 @@ def _cmd_run(args: argparse.Namespace, registry: ProviderRegistry) -> int:
             print(f"Final answer: {outcome.final_output_path}")
             print()
             print(outcome.final_output_path.read_text(encoding="utf-8"), end="")
-            return 0
-        return 1
+            return exit_code
+        return exit_code
 
+    orchestrator = AgentPanelOrchestrator(registry=registry, runs_dir=args.runs_dir, workspace=workspace)
     outcome = orchestrator.run(
         task=task,
         panel=args.panel,
@@ -324,10 +362,11 @@ def _cmd_runs(args: argparse.Namespace) -> int:
         if not summaries:
             print(f"No runs in {args.runs_dir}")
             return 0
+        print("run_id\tmode\tstatus\tpanel\tjudge\tskills")
         for item in summaries:
-            mode = "dry-run" if item.dry_run else "live"
+            mode = "dry-run" if item.dry_run else item.mode
             skills = ",".join(item.skills) if item.skills else "none"
-            print(f"{item.run_id}\t{mode}\t{item.panel_slug}\t{item.judge}\t{skills}")
+            print(f"{item.run_id}\t{mode}\t{item.status}\t{item.panel_slug}\t{item.judge}\t{skills}")
         return 0
 
     if args.runs_command == "show":
@@ -336,13 +375,25 @@ def _cmd_runs(args: argparse.Namespace) -> int:
             return _emit_json(run_detail_to_dict(detail))
         summary = detail.summary
         print(f"Run: {summary.run_id}")
+        print(f"Mode: {summary.mode}")
         print(f"Panel: {summary.panel_slug}")
         print(f"Judge: {summary.judge}")
         print(f"Skills: {', '.join(summary.skills) if summary.skills else 'none'}")
-        print(f"Mode: {'dry-run' if summary.dry_run else 'live'}")
+        print(f"Execution: {'dry-run' if summary.dry_run else 'live'}")
         print(f"Status: {detail.status}")
+        if detail.stopped_reason:
+            print(f"Stopped: {detail.stopped_reason}")
         if detail.run_error:
             print(f"Error: {detail.run_error}")
+        if args.rounds and detail.audit_rounds:
+            print("Rounds:")
+            for item in detail.audit_rounds:
+                print(
+                    f"  {item.round_number:02d}: builder={item.builder_status}"
+                    f" gates={'pass' if item.gates_passed else 'fail'}"
+                    f" clean={'yes' if item.clean else 'no'}"
+                    f" ({item.round_status})"
+                )
         if detail.final_output:
             print(f"Final: {detail.final_output}")
         for key, path in detail.artifacts.items():
@@ -479,7 +530,18 @@ def _parse_task(parts: List[str]) -> str:
     if clean:
         return " ".join(clean)
     if not sys.stdin.isatty():
-        return sys.stdin.read()
+        try:
+            import select
+
+            if hasattr(sys.stdin, "fileno"):
+                ready, _, _ = select.select([sys.stdin], [], [], 0)
+                if not ready:
+                    return ""
+        except (OSError, ValueError):
+            pass
+        piped = sys.stdin.read()
+        if piped.strip():
+            return piped
     return ""
 
 

@@ -102,9 +102,19 @@ class ProviderRegistry:
             raise ValueError(f"unknown provider {name!r}; known providers: {known}") from exc
 
 
+WorkspaceMode = str  # "scratch" | "project"
+
+
 class ProviderRunner:
-    def __init__(self, registry: ProviderRegistry) -> None:
+    def __init__(
+        self,
+        registry: ProviderRegistry,
+        project_root: Optional[Path] = None,
+        workspace: WorkspaceMode = "scratch",
+    ) -> None:
         self.registry = registry
+        self.project_root = (project_root or Path.cwd()).resolve()
+        self.workspace = workspace
 
     def run(
         self,
@@ -114,7 +124,14 @@ class ProviderRunner:
         log_path: Path,
         timeout_seconds: int,
         empty_retries: Optional[int] = None,
+        workspace: Optional[WorkspaceMode] = None,
+        project_root: Optional[Path] = None,
     ) -> ProviderRunResult:
+        mode = workspace or self.workspace
+        root = (project_root or self.project_root).resolve()
+        if mode not in {"scratch", "project"}:
+            raise ValueError(f"unsupported workspace mode: {mode!r}")
+
         provider = self.registry.require_provider(provider_name)
         detection = self.registry.detect_command(provider, "provider")
         if not detection.available:
@@ -134,74 +151,111 @@ class ProviderRunner:
         max_attempts = retry_limit + 1
 
         for attempt in range(max_attempts):
-            with tempfile.TemporaryDirectory(prefix=f"panel-{provider_name}.") as scratch:
-                command = self._render_command(
-                    provider.command,
-                    prompt=prompt,
-                    output_path=output_path,
-                    scratch_dir=Path(scratch),
+            if mode == "project":
+                result = self._run_once(
+                    provider,
+                    provider_name,
+                    prompt,
+                    output_path,
+                    log_path,
+                    timeout_seconds,
+                    work_dir=root,
+                    project_root=root,
+                    attempt=attempt,
                 )
-                try:
-                    completed = self._execute(provider, command, prompt, Path(scratch), timeout_seconds)
-                except subprocess.TimeoutExpired as exc:
-                    log_path.write_text(str(exc), encoding="utf-8")
-                    if attempt < max_attempts - 1:
-                        continue
-                    return ProviderRunResult(
-                        provider=provider_name,
-                        status="timeout",
-                        output="",
-                        returncode=None,
-                        command=command,
-                        error=f"provider timed out after {timeout_seconds} seconds",
+            else:
+                with tempfile.TemporaryDirectory(prefix=f"panel-{provider_name}.") as scratch:
+                    scratch_path = Path(scratch)
+                    result = self._run_once(
+                        provider,
+                        provider_name,
+                        prompt,
+                        output_path,
+                        log_path,
+                        timeout_seconds,
+                        work_dir=scratch_path,
+                        project_root=root,
+                        attempt=attempt,
                     )
-
-                log_text = (
-                    "COMMAND: " + " ".join(command) + "\n\n"
-                    + "STDOUT:\n" + (completed.stdout or "")
-                    + "\n\nSTDERR:\n" + (completed.stderr or "")
-                )
-                if attempt:
-                    log_text = f"ATTEMPT: {attempt + 1}\n\n" + log_text
-                log_path.write_text(log_text, encoding="utf-8")
-
-                if provider.mode == "stdin_to_output_file":
-                    output = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
-                else:
-                    output = completed.stdout or ""
-                    output_path.write_text(output, encoding="utf-8")
-
-                if completed.returncode != 0:
-                    return ProviderRunResult(
-                        provider=provider_name,
-                        status="failed",
-                        output=output,
-                        returncode=completed.returncode,
-                        command=command,
-                        error=(completed.stderr or completed.stdout or "").strip(),
-                    )
-
-                if not output.strip():
-                    if attempt < max_attempts - 1:
-                        continue
-                    return ProviderRunResult(
-                        provider=provider_name,
-                        status="empty",
-                        output=output,
-                        returncode=completed.returncode,
-                        command=command,
-                        error="provider completed but produced no output",
-                    )
-
-                return ProviderRunResult(
-                    provider=provider_name,
-                    status="success",
-                    output=output,
-                    returncode=completed.returncode,
-                    command=command,
-                )
+            if result.status != "empty" or attempt >= max_attempts - 1:
+                return result
 
         raise RuntimeError("provider run ended without a result")
+
+    def _run_once(
+        self,
+        provider: ProviderConfig,
+        provider_name: str,
+        prompt: str,
+        output_path: Path,
+        log_path: Path,
+        timeout_seconds: int,
+        work_dir: Path,
+        project_root: Path,
+        attempt: int,
+    ) -> ProviderRunResult:
+        command = self._render_command(
+            provider.command,
+            prompt=prompt,
+            output_path=output_path,
+            scratch_dir=work_dir,
+            project_root=project_root,
+        )
+        try:
+            completed = self._execute(provider, command, prompt, work_dir, timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            log_path.write_text(str(exc), encoding="utf-8")
+            return ProviderRunResult(
+                provider=provider_name,
+                status="timeout",
+                output="",
+                returncode=None,
+                command=command,
+                error=f"provider timed out after {timeout_seconds} seconds",
+            )
+
+        log_text = (
+            "COMMAND: " + " ".join(command) + "\n\n"
+            + "STDOUT:\n" + (completed.stdout or "")
+            + "\n\nSTDERR:\n" + (completed.stderr or "")
+        )
+        if attempt:
+            log_text = f"ATTEMPT: {attempt + 1}\n\n" + log_text
+        log_path.write_text(log_text, encoding="utf-8")
+
+        if provider.mode == "stdin_to_output_file":
+            output = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+        else:
+            output = completed.stdout or ""
+            output_path.write_text(output, encoding="utf-8")
+
+        if completed.returncode != 0:
+            return ProviderRunResult(
+                provider=provider_name,
+                status="failed",
+                output=output,
+                returncode=completed.returncode,
+                command=command,
+                error=(completed.stderr or completed.stdout or "").strip(),
+            )
+
+        if not output.strip():
+            return ProviderRunResult(
+                provider=provider_name,
+                status="empty",
+                output=output,
+                returncode=completed.returncode,
+                command=command,
+                error="provider completed but produced no output",
+            )
+
+        return ProviderRunResult(
+            provider=provider_name,
+            status="success",
+            output=output,
+            returncode=completed.returncode,
+            command=command,
+        )
 
     @staticmethod
     def _empty_retry_limit() -> int:
@@ -248,10 +302,12 @@ class ProviderRunner:
         prompt: str,
         output_path: Path,
         scratch_dir: Path,
+        project_root: Path,
     ) -> List[str]:
         values = {
             "prompt": prompt,
             "output_file": str(output_path),
             "scratch_dir": str(scratch_dir),
+            "project_root": str(project_root),
         }
         return [part.format(**values) for part in command]

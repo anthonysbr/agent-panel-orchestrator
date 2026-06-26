@@ -1,6 +1,6 @@
 {
   "name": "agent-panel-orchestrator",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Run independent agent panels through Codex, Claude Code, Cursor, and Gemini CLIs.",
   "license": "MIT",
   "author": "Anthony Batista",

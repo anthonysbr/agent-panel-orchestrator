@@ -1,0 +1,5 @@
+gates:
+  - name: compileall
+    command: python3 -m compileall worker_pool tests -q
+  - name: unittest
+    command: python3 -m unittest discover tests -q

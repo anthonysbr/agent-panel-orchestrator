@@ -1,3 +1,5 @@
+# Copy to .panel/gates.yaml and customize for your project.
+# If gates.yaml is missing, panel uses built-in defaults: compileall + unittest.
 gates:
   - name: compileall
     command: python3 -m compileall panel_core tests -q

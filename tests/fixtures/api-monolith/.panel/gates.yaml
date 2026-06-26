@@ -1,0 +1,7 @@
+gates:
+  - name: compileall
+    command: python3 -m compileall app tests -q
+  - name: unittest
+    command: python3 -m unittest discover tests -q
+  - name: no-raw-sql-interpolation
+    command: python3 scripts/check_no_raw_sql.py

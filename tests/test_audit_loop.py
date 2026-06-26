@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -77,6 +78,45 @@ class AuditLoopTests(unittest.TestCase):
             self.assertTrue((round_dir / "builder.prompt.md").exists())
             runner_run.assert_not_called()
             run_panelists.assert_not_called()
+
+    @mock.patch("panel_core.audit_loop.run_gates")
+    @mock.patch.object(ProviderRunner, "run")
+    @mock.patch("panel_core.audit_loop.AuditLoopOrchestrator._ensure_available")
+    def test_builder_failure_skips_gates(
+        self,
+        ensure: mock.Mock,
+        runner_run: mock.Mock,
+        run_gates: mock.Mock,
+    ) -> None:
+        runner_run.return_value = ProviderRunResult(
+            provider="codex",
+            status="failed",
+            output="",
+            returncode=1,
+            command=["codex"],
+            error="boom",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            loop = AuditLoopOrchestrator(
+                registry=ProviderRegistry(make_config()),
+                runs_dir=root / "runs",
+                project_root=root,
+            )
+            with mock.patch("panel_core.providers.shutil.which", return_value="/bin/codex"):
+                outcome = loop.run_audit_loop(
+                    task="fix the bug",
+                    builder="codex",
+                    panel="codex",
+                    judge="codex",
+                    dry_run=False,
+                    timeout_seconds=30,
+                    max_rounds=1,
+                )
+            run_gates.assert_not_called()
+            self.assertEqual(outcome.stopped_reason, "max-rounds")
+            summary = json.loads((Path(outcome.plan.run_dir) / "audit_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["rounds_detail"][0]["round_status"], "builder_failed")
 
 
 if __name__ == "__main__":
