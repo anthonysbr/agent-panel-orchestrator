@@ -19,7 +19,20 @@ git tag v0.3.0
 git push origin v0.3.0
 ```
 
-Jobs: build artifacts → GitHub Release → PyPI → npm (npm publish is idempotent if the version already exists).
+Jobs: build artifacts → GitHub Release → PyPI (optional) → npm (optional).
+
+### npm (manual if CI token cannot publish)
+
+If your npm account requires publish OTP, CI may fail with 403 even when `NPM_TOKEN` is set. Publish locally, then re-run the failed **publish-npm** job (or push the tag again):
+
+```bash
+cd npm
+node scripts/prepack.js
+npm publish --access public --otp=YOUR_6_DIGIT_CODE
+npm view agent-panel-orchestrator version
+```
+
+CI skips publish when that version already exists on npm. The **publish-npm** job uses `continue-on-error` so a token/2FA mismatch does not fail the whole release workflow.
 
 ## Homebrew tap
 
