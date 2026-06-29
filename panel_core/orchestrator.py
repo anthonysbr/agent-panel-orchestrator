@@ -153,11 +153,13 @@ class AgentPanelOrchestrator:
         runner: Optional[ProviderRunner] = None,
         runs_dir: Optional[Path] = None,
         project_root: Optional[Path] = None,
+        workspace: str = "scratch",
     ) -> None:
         self.registry = registry
-        self.runner = runner or ProviderRunner(registry)
-        self.runs_dir = runs_dir or Path.cwd() / "runs"
         self.project_root = (project_root or Path.cwd()).resolve()
+        self.workspace = workspace
+        self.runner = runner or ProviderRunner(registry, project_root=self.project_root, workspace=workspace)
+        self.runs_dir = runs_dir or Path.cwd() / "runs"
 
     def preview(
         self,
@@ -261,6 +263,8 @@ class AgentPanelOrchestrator:
             final_path,
             run_dir / "logs" / "judge.log",
             timeout_seconds,
+            workspace=self.workspace,
+            project_root=self.project_root,
         )
         if judge_result.status != "success":
             message = f"judge failed with status {judge_result.status}: {judge_result.error}"
@@ -301,9 +305,10 @@ class AgentPanelOrchestrator:
         candidate.mkdir(parents=True)
         return candidate
 
-    def _write_run_plan(self, run_dir: Path, plan: RunPlan, task: str) -> None:
+    def _write_run_plan(self, run_dir: Path, plan: RunPlan, task: str, mode: str = "run") -> None:
         (run_dir / "task.md").write_text(task, encoding="utf-8")
         payload = {
+            "mode": mode,
             "panel_slug": plan.panel_slug,
             "judge": plan.judge,
             "dry_run": plan.dry_run,
@@ -335,6 +340,8 @@ class AgentPanelOrchestrator:
             output_path,
             log_path,
             timeout_seconds,
+            workspace=self.workspace,
+            project_root=self.project_root,
         )
 
     def _run_panelists(

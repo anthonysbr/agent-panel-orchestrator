@@ -58,6 +58,36 @@ class CliTests(unittest.TestCase):
             self.assertEqual(0, code)
             self.assertIn("Run directory:", buffer.getvalue())
 
+    def test_run_without_task_fails_fast(self) -> None:
+        err = StringIO()
+        with mock.patch("sys.stderr", err):
+            code = main(["run", "--yes", "--dry-run"])
+        self.assertEqual(1, code)
+        self.assertIn("task", err.getvalue().lower())
+
+    def test_run_accepts_piped_stdin(self) -> None:
+        buffer = StringIO()
+        stdin = StringIO("review this design from stdin\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch("sys.stdin", stdin):
+                with mock.patch("sys.stdin.isatty", return_value=False):
+                    with mock.patch("sys.stdout", buffer):
+                        code = main(
+                            [
+                                "run",
+                                "--dry-run",
+                                "--yes",
+                                "--panel",
+                                "codex",
+                                "--judge",
+                                "codex",
+                                "--runs-dir",
+                                tmp,
+                            ]
+                        )
+        self.assertEqual(0, code)
+        self.assertIn("Run directory:", buffer.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

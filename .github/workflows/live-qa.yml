@@ -1,0 +1,55 @@
+name: Live QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: Fixture name under tests/fixtures/
+        required: true
+        default: worker-pool-bug
+        type: choice
+        options:
+          - worker-pool-bug
+          - api-monolith
+          - js-python-monorepo
+      provider:
+        description: Provider for builder/panel/judge
+        required: true
+        default: codex
+        type: choice
+        options:
+          - codex
+          - claude
+          - cursor
+          - gemini
+      max_rounds:
+        description: Audit-loop max rounds
+        required: true
+        default: "3"
+        type: string
+
+jobs:
+  live-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install panel
+        run: python3 -m pip install -e .
+
+      - name: Doctor
+        run: panel doctor
+
+      - name: Run audit-loop live QA
+        working-directory: tests/fixtures/${{ inputs.fixture }}
+        run: |
+          panel run --yes --audit-loop --ci --workspace project \
+            --builder ${{ inputs.provider }} \
+            --panel ${{ inputs.provider }}:2 \
+            --judge ${{ inputs.provider }} \
+            --max-rounds ${{ inputs.max_rounds }} \
+            -- "fix the known issue documented in README.md"

@@ -53,8 +53,9 @@ class FakeRunner:
         output_path: Path,
         log_path: Path,
         timeout_seconds: int,
+        **kwargs: object,
     ) -> ProviderRunResult:
-        del prompt, timeout_seconds
+        del prompt, timeout_seconds, kwargs
         self.calls.append((provider_name, output_path))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)

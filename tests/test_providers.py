@@ -99,6 +99,26 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(result.status, "success")
         self.assertEqual(run.call_count, 2)
 
+    @mock.patch("panel_core.providers.subprocess.run")
+    @mock.patch("panel_core.providers.shutil.which")
+    def test_runner_uses_project_workspace(self, which: mock.Mock, run: mock.Mock) -> None:
+        which.return_value = "/bin/codex"
+        run.return_value = subprocess.CompletedProcess(["codex"], 0, "answer\n", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            runner = ProviderRunner(ProviderRegistry(make_config()), project_root=project, workspace="project")
+            result = runner.run(
+                "codex",
+                "prompt",
+                project / "out.md",
+                project / "log.txt",
+                timeout_seconds=3,
+            )
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(Path(run.call_args.kwargs["cwd"]).resolve(), project.resolve())
+
 
 if __name__ == "__main__":
     unittest.main()

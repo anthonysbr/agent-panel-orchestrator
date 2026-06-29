@@ -31,6 +31,7 @@ class AuditRoundOutcome:
     audit_results: List[ProviderRunResult]
     judge_result: Optional[ProviderRunResult]
     clean: bool
+    round_status: str = "completed"
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,22 @@ class AuditLoopOutcome:
 
 
 class AuditLoopOrchestrator(AgentPanelOrchestrator):
+    def __init__(
+        self,
+        registry: ProviderRegistry,
+        runner: Optional[ProviderRunner] = None,
+        runs_dir: Optional[Path] = None,
+        project_root: Optional[Path] = None,
+        workspace: str = "project",
+    ) -> None:
+        super().__init__(
+            registry=registry,
+            runner=runner,
+            runs_dir=runs_dir,
+            project_root=project_root,
+            workspace=workspace,
+        )
+
     def run_audit_loop(
         self,
         task: str,
@@ -82,13 +99,14 @@ class AuditLoopOrchestrator(AgentPanelOrchestrator):
         selected_skills = SkillRegistry(self.project_root).resolve(skills_spec, task)
         skill_context = render_skill_context(selected_skills)
 
-        self._write_run_plan(run_dir, plan, task)
+        self._write_run_plan(run_dir, plan, task, mode="audit-loop")
         (run_dir / "audit_loop.json").write_text(
             json.dumps(
                 {
                     "builder": builder_provider,
                     "max_rounds": max_rounds,
                     "clean_promise": CLEAN_PROMISE,
+                    "workspace": self.workspace,
                 },
                 indent=2,
             )
@@ -141,7 +159,27 @@ class AuditLoopOrchestrator(AgentPanelOrchestrator):
                 round_dir / "builder.output.md",
                 run_dir / "logs" / f"round-{round_number:02d}-builder.log",
                 timeout_seconds,
+                workspace=self.workspace,
+                project_root=self.project_root,
             )
+
+            if builder_result.status != "success":
+                rounds.append(
+                    AuditRoundOutcome(
+                        round_number=round_number,
+                        gate_summary=GateRunSummary(passed=False, results=[]),
+                        builder_result=builder_result,
+                        audit_results=[],
+                        judge_result=None,
+                        clean=False,
+                        round_status="builder_failed",
+                    )
+                )
+                findings = _merge_findings(
+                    findings,
+                    f"Builder failed with status {builder_result.status}: {builder_result.error}",
+                )
+                continue
 
             gate_summary = run_gates(self.project_root)
             write_gate_report(run_dir, round_dir, gate_summary)
@@ -207,6 +245,8 @@ class AuditLoopOrchestrator(AgentPanelOrchestrator):
                 judge_path,
                 run_dir / "logs" / f"round-{round_number:02d}-judge.log",
                 timeout_seconds,
+                workspace=self.workspace,
+                project_root=self.project_root,
             )
             clean = gate_summary.passed and judge_result.status == "success" and _is_clean(judge_result.output)
             rounds.append(
@@ -235,6 +275,8 @@ class AuditLoopOrchestrator(AgentPanelOrchestrator):
                     "rounds_detail": [
                         {
                             "round": item.round_number,
+                            "round_status": item.round_status,
+                            "builder_status": item.builder_result.status,
                             "gates_passed": item.gate_summary.passed,
                             "clean": item.clean,
                         }
